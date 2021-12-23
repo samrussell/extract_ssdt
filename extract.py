@@ -1,14 +1,20 @@
 import lief
+import json
 
 def rva_as_hex(rva_as_list):
     return rva_as_list[0] + rva_as_list[1]*0x100 + rva_as_list[2]*0x10000
 
-def format_ssdt(rdata, export_lookup, ssdt_start, arg_counts_start, ssdt_size):
+def format_ssdt(rdata, export_lookup, symbol_rva_lookup, ssdt_start, arg_counts_start, ssdt_size):
     for x in range(ssdt_size):
         ssdt_offset = ssdt_start + (x*4)
         arg_count_offset = arg_counts_start + x
         address_rva = rva_as_hex(rdata.content[ssdt_offset:ssdt_offset+4])
-        function_name = export_lookup[address_rva] if address_rva in export_lookup else "?"
+        if address_rva in export_lookup:
+            function_name = export_lookup[address_rva]
+        elif address_rva in symbol_rva_lookup:
+            function_name = symbol_rva_lookup[address_rva]
+        else:
+            function_name = "?"
         print("0x%03X: 0x%08X (%s)" % (x, address_rva, function_name))
     return
 
@@ -45,8 +51,18 @@ def test_ssdt_rvas(rdata, pointer):
     print("Didn't find end")
     return None
 
-def extract_ssdt(kernel_path):
+def extract_ssdt(kernel_path, symbols):
     binary = lief.parse(kernel_path)
+
+    # convert segment:offset to actual addresses
+    symbol_rva_lookup = {}
+    for symbol, address in symbols.items():
+        segment, offset = address.split(":")
+        try:
+            base_rva = binary.sections[int(segment, 0x10)-1].virtual_address
+        except IndexError:
+            continue
+        symbol_rva_lookup[base_rva  + int(offset, 0x10)] = symbol
 
     # how to find SSDT
     # - find RVA of something we know is exported (e.g. NtWaitForSingleObject)
@@ -66,7 +82,7 @@ def extract_ssdt(kernel_path):
         result = test_ssdt_rvas(rdata, pointer)
         if result:
             (ssdt_start, arg_counts_start, ssdt_size) = result
-            return format_ssdt(rdata, export_lookup, ssdt_start, arg_counts_start, ssdt_size)
+            return format_ssdt(rdata, export_lookup, symbol_rva_lookup, ssdt_start, arg_counts_start, ssdt_size)
     
     print("Fail: couldn't extract SSDT :'(")
 
@@ -74,6 +90,12 @@ if __name__ == "__main__":
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument("kernel_path")
+    parser.add_argument("--symbol_path")
     args = parser.parse_args()
 
-    extract_ssdt(args.kernel_path)
+    if args.symbol_path:
+        with open(args.symbol_path) as file:
+            symbols = json.loads(file.read())
+    else:
+        symbols = {}
+    extract_ssdt(args.kernel_path, symbols)
