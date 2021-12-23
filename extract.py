@@ -9,7 +9,7 @@ def format_ssdt(rdata, export_lookup, ssdt_start, arg_counts_start, ssdt_size):
         arg_count_offset = arg_counts_start + x
         address_rva = rva_as_hex(rdata.content[ssdt_offset:ssdt_offset+4])
         function_name = export_lookup[address_rva] if address_rva in export_lookup else "?"
-        print("0x%03X: 0x%08X (%s)" % (x+1, address_rva, function_name))
+        print("0x%03X: 0x%08X (%s)" % (x, address_rva, function_name))
     return
 
 def test_arg_counts(rdata, arg_counts_start, ssdt_size):
@@ -35,7 +35,7 @@ def test_ssdt_rvas(rdata, pointer):
             ssdt_size = rva[1]*256 + rva[0]
             print("Final entry at 0x%X, value 0x%X" % (offset + rdata.virtual_address, ssdt_size))
             # jump past this and test the next X bytes
-            ssdt_start = offset - ((ssdt_size - 1) * 4)
+            ssdt_start = offset - (ssdt_size * 4)
             arg_counts_start = offset + 4
             if not test_arg_counts(rdata, arg_counts_start, ssdt_size):
                 continue
